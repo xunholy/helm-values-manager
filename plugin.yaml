@@ -1,0 +1,9 @@
+name: "value-manager"
+version: "0.0.1"
+usage: "detect unused and/or outdated values being used"
+description: "detect unused and/or outdated values being used"
+command: "$HELM_PLUGIN_DIR/bin/value-manager"
+hooks:
+ install: "cd $HELM_PLUGIN_DIR; ./scripts/install.sh"
+ update: "cd $HELM_PLUGIN_DIR; ./scripts/update.sh"
+ delete: "cd $HELM_PLUGIN_DIR; ./scripts/delete.sh"
