@@ -1,5 +1,7 @@
 additionalContainers: {}
-affinity: {}
+affinity: {
+  foo: 100
+}
 autoscaling:
   enabled: false
   maxReplicas: 100
@@ -8,7 +10,7 @@ autoscaling:
 container:
   image:
     pullPolicy: IfNotPresent
-    repository: xunholy/example
+    repository: xunholy/example-2
     tag: sha-e307597
 fullnameOverride: ""
 imagePullSecrets: []

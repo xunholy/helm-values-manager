@@ -1,0 +1,3 @@
+container:
+  image:
+    repository: xunholy/example-2

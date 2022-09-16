@@ -2,12 +2,15 @@ package main
 
 import (
 	"flag"
+	"fmt"
+	"io/ioutil"
 	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
 	"time"
 
-	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/cli"
-	"helm.sh/helm/v3/pkg/release"
+	"gopkg.in/yaml.v2"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"github.com/mitchellh/go-homedir"
@@ -23,7 +26,6 @@ var (
 	context        string
 	namespace      string
 	version        int
-	settings       = cli.New()
 )
 
 type KubeConfigSetup struct {
@@ -32,7 +34,16 @@ type KubeConfigSetup struct {
 	Namespace      string
 }
 
-func (e *KubeConfigSetup) init() {
+type ChangeRequest struct {
+	Path    string
+	Content reflect.Value
+}
+
+type Changes struct {
+	Items []*ChangeRequest
+}
+
+func init() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339})
 
 	// TODO: Derive namespace and context from kubeconfig
@@ -59,6 +70,19 @@ func main() {
 	if version == 0 {
 		log.Info().Msg("version not specified. default: 0")
 	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	upstream, err := ReadYAML(filepath.Join(cwd, "examples", "upstream-values.yaml"))
+	if err != nil {
+		log.Error().Err(err).Msg("failed to read yaml file")
+	}
+	downstream, err := ReadYAML(filepath.Join(cwd, "examples", "downstream-values.yaml"))
+	if err != nil {
+		log.Error().Err(err).Msg("failed to read yaml file")
+	}
+	DetectChangedValues(upstream, downstream)
 }
 
 func findKubeConfig() (string, error) {
@@ -73,81 +97,98 @@ func findKubeConfig() (string, error) {
 	return path, nil
 }
 
-// TODO: Refactor - Currently pulled from OSS
-// NewClient return a new helm client with provided config
-func NewClient(namespace string, kfcg KubeConfigSetup) (*action.Configuration, error) {
-	actionConfig := new(action.Configuration)
+func ReadYAML(filePath string) (map[string]interface{}, error) {
+	data, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]interface{})
+	err = yaml.Unmarshal(data, &result)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
 
-	return func(ac *action.Configuration) (*action.Configuration, error) {
-		settings.KubeContext = kfcg.Context
-		settings.KubeConfig = kfcg.KubeConfigFile
-		if namespace == "" {
-			namespace = settings.Namespace()
-		} else {
-			kfcg.Namespace = settings.Namespace()
+func DetectChangedValues(a map[string]interface{}, b map[string]interface{}) ([]byte, error) {
+	// step through each map to determine key : value equal otherwise
+
+	if reflect.DeepEqual(a, b) {
+		return nil, nil
+	}
+
+	valueA := reflect.ValueOf(a)
+	valueB := reflect.ValueOf(b)
+
+	changes := &Changes{}
+
+	isTheSame := GetChanges(valueA, valueB, "root", changes)
+
+	fmt.Println(">>> isTheSame", isTheSame)
+
+	return nil, nil
+}
+
+func GetChanges(a reflect.Value, b reflect.Value, path string, changes *Changes) bool {
+	kindA := a.Kind()
+	kindB := b.Kind()
+
+	fmt.Println("[ENTER] >>> path", path, ">>> kind", kindA, kindB, reflect.ValueOf(kindA).Kind())
+
+	if kindA != kindB {
+		return false
+	}
+
+	// a and be are the same type from here on....
+	if kindA == kindB {
+		switch kindA {
+		case reflect.Map:
+			var keysA, keysB []string
+			for _, key := range a.MapKeys() {
+				if key.Kind() != reflect.String {
+					panic("Expect map keys to be string")
+				}
+				keysA = append(keysA, key.String())
+			}
+			for _, key := range b.MapKeys() {
+				if key.Kind() != reflect.String {
+					panic("Expect map keys to be string")
+				}
+				keysB = append(keysB, key.String())
+			}
+
+			sort.Strings(keysA)
+			sort.Strings(keysB)
+
+			if reflect.DeepEqual(keysA, keysB) {
+				// doesn't matter if we use keysA or B as they are the same
+				for _, key := range a.MapKeys() {
+					itemA := a.MapIndex(key)
+					itemB := b.MapIndex(key)
+
+					isSame := GetChanges(itemA.Elem(), itemB.Elem(), path+"."+key.String(), changes)
+					if !isSame {
+						return false
+					}
+				}
+			} else {
+				fmt.Println(">>> keys are NOT same")
+				fmt.Println(a.MapKeys())
+				fmt.Println(b.MapKeys())
+				return false
+			}
+		case reflect.Slice:
+			return reflect.DeepEqual(a, b)
+
+		case reflect.Interface:
+			fmt.Println(">>> debug", a, b, kindA, kindB)
+
+		default:
+			fmt.Println(a, b, kindA, kindB)
+			panic("Couldn't determine stuff")
+
 		}
-		err := actionConfig.Init(settings.RESTClientGetter(), namespace, os.Getenv("HELM_DRIVER"), func(format string, v ...interface{}) {
-			// log.Debug(fmt.Sprintf(format, v))
-		})
-		if err != nil {
-			return nil, err
-		}
-		return ac, nil
-
-	}(actionConfig)
-}
-
-// getLastRelease fetch the latest release
-func getLastRelease(release string, ac *action.Get) (*release.Release, error) {
-	rel, err := ac.Run(release)
-	if err != nil {
-		return nil, err
-	}
-	return rel, nil
-}
-
-// getHelmClient returns action configuration based on Helm env
-func getHelmClient() (*action.Configuration, error) {
-	kubeConfig := KubeConfigSetup{
-		Context:        context,
-		KubeConfigFile: kubeConfigFile,
-		Namespace:      namespace,
-	}
-	ac, err := NewClient(kubeConfig.Namespace, kubeConfig)
-	if err != nil {
-		return nil, err
-	}
-	return ac, nil
-}
-
-// runFetch retrieve values for a given old release
-func runFetch(args []string) (map[string]interface{}, error) {
-	repo := args[0]
-
-	ac, err := getHelmClient()
-	if err != nil {
-		return nil, err
-	}
-	p := action.NewGet(ac)
-	rel, err := getLastRelease(repo, p)
-	if err != nil {
-		return nil, err
 	}
 
-	var previousRelease int
-	if version == 0 {
-		previousRelease = rel.Version - 1
-	} else {
-		previousRelease = version
-	}
-	gVal := action.NewGetValues(ac)
-	gVal.Version = previousRelease
-	gVal.AllValues = true
-
-	relVal, err := gVal.Run(rel.Name)
-	if err != nil {
-		return nil, err
-	}
-
-	return relVal, nil
+	return false
 }
