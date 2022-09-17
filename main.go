@@ -3,19 +3,20 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
+	"strings"
 	"time"
 
-	"gopkg.in/yaml.v2"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	"github.com/gonvenience/ytbx"
+	"github.com/homeport/dyff/pkg/dyff"
 	"github.com/mitchellh/go-homedir"
 	"github.com/rs/zerolog"
 	log "github.com/rs/zerolog/log"
+	"github.com/stretchr/objx"
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 )
@@ -74,15 +75,46 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	upstream, err := ReadYAML(filepath.Join(cwd, "examples", "upstream-values.yaml"))
+	downstreamFile := file(filepath.Join(cwd, "examples", "upstream-values.yaml"))
+	upstreamFile := file(filepath.Join(cwd, "examples", "downstream-values.yaml"))
+	diff, err := dyff.CompareInputFiles(upstreamFile, downstreamFile)
 	if err != nil {
-		log.Error().Err(err).Msg("failed to read yaml file")
+		panic(err)
 	}
-	downstream, err := ReadYAML(filepath.Join(cwd, "examples", "downstream-values.yaml"))
+	changes := objx.Map{}
+	for _, v := range diff.Diffs {
+		changes = DetectChangedValues(v, changes)
+	}
+	fmt.Println(changes)
+}
+
+func DetectChangedValues(diff dyff.Diff, changes objx.Map) objx.Map {
+	var keyPath []string
+	for _, e := range diff.Path.PathElements {
+		keyPath = append(keyPath, e.Name)
+	}
+	keys := strings.Join(keyPath, ".")
+	changes.Set(keys, diff.Details[0].From.Value)
+	return changes
+}
+
+func DetectChangedValuesUpstream(diff dyff.Diff, changes objx.Map) objx.Map {
+	var keyPath []string
+	for _, e := range diff.Path.PathElements {
+		keyPath = append(keyPath, e.Name)
+	}
+	keys := strings.Join(keyPath, ".")
+	changes.Set(keys, diff.Details[0].To.Value)
+	return changes
+}
+
+func file(input string) ytbx.InputFile {
+	inputfile, err := ytbx.LoadFile(input)
 	if err != nil {
-		log.Error().Err(err).Msg("failed to read yaml file")
+		fmt.Sprintf("Failed to load input file from %s: %s", input, err.Error())
 	}
-	DetectChangedValues(upstream, downstream)
+
+	return inputfile
 }
 
 func findKubeConfig() (string, error) {
@@ -95,100 +127,4 @@ func findKubeConfig() (string, error) {
 		return "", err
 	}
 	return path, nil
-}
-
-func ReadYAML(filePath string) (map[string]interface{}, error) {
-	data, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		return nil, err
-	}
-	result := make(map[string]interface{})
-	err = yaml.Unmarshal(data, &result)
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-func DetectChangedValues(a map[string]interface{}, b map[string]interface{}) ([]byte, error) {
-	// step through each map to determine key : value equal otherwise
-
-	if reflect.DeepEqual(a, b) {
-		return nil, nil
-	}
-
-	valueA := reflect.ValueOf(a)
-	valueB := reflect.ValueOf(b)
-
-	changes := &Changes{}
-
-	isTheSame := GetChanges(valueA, valueB, "root", changes)
-
-	fmt.Println(">>> isTheSame", isTheSame)
-
-	return nil, nil
-}
-
-func GetChanges(a reflect.Value, b reflect.Value, path string, changes *Changes) bool {
-	kindA := a.Kind()
-	kindB := b.Kind()
-
-	fmt.Println("[ENTER] >>> path", path, ">>> kind", kindA, kindB, reflect.ValueOf(kindA).Kind())
-
-	if kindA != kindB {
-		return false
-	}
-
-	// a and be are the same type from here on....
-	if kindA == kindB {
-		switch kindA {
-		case reflect.Map:
-			var keysA, keysB []string
-			for _, key := range a.MapKeys() {
-				if key.Kind() != reflect.String {
-					panic("Expect map keys to be string")
-				}
-				keysA = append(keysA, key.String())
-			}
-			for _, key := range b.MapKeys() {
-				if key.Kind() != reflect.String {
-					panic("Expect map keys to be string")
-				}
-				keysB = append(keysB, key.String())
-			}
-
-			sort.Strings(keysA)
-			sort.Strings(keysB)
-
-			if reflect.DeepEqual(keysA, keysB) {
-				// doesn't matter if we use keysA or B as they are the same
-				for _, key := range a.MapKeys() {
-					itemA := a.MapIndex(key)
-					itemB := b.MapIndex(key)
-
-					isSame := GetChanges(itemA.Elem(), itemB.Elem(), path+"."+key.String(), changes)
-					if !isSame {
-						return false
-					}
-				}
-			} else {
-				fmt.Println(">>> keys are NOT same")
-				fmt.Println(a.MapKeys())
-				fmt.Println(b.MapKeys())
-				return false
-			}
-		case reflect.Slice:
-			return reflect.DeepEqual(a, b)
-
-		case reflect.Interface:
-			fmt.Println(">>> debug", a, b, kindA, kindB)
-
-		default:
-			fmt.Println(a, b, kindA, kindB)
-			panic("Couldn't determine stuff")
-
-		}
-	}
-
-	return false
 }

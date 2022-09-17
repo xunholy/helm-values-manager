@@ -1,7 +1,5 @@
 additionalContainers: {}
-affinity: {
-  foo: 100
-}
+affinity: {}
 autoscaling:
   enabled: false
   maxReplicas: 100
@@ -10,8 +8,8 @@ autoscaling:
 container:
   image:
     pullPolicy: IfNotPresent
-    repository: xunholy/example-2
-    tag: sha-e307597
+    repository: xunholy/example-1
+    tag: sha-e3075971
 fullnameOverride: ""
 imagePullSecrets: []
 ingress:
@@ -22,7 +20,7 @@ ingress:
   - host: chart-example.local
     paths:
     - path: /
-      pathType: ImplementationSpecific
+      pathType: ImplementationSpecific2
   tls: []
 initContainer:
   image:

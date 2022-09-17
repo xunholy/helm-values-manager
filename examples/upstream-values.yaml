@@ -5,7 +5,7 @@ autoscaling:
   maxReplicas: 100
   minReplicas: 1
   targetCPUUtilizationPercentage: 80
-container:
+containers:
   image:
     pullPolicy: IfNotPresent
     repository: xunholy/example
