@@ -75,23 +75,26 @@ func main() {
 	if version == 0 {
 		log.Info().Msg("version not specified. default: 0")
 	}
+
 	cwd, err := os.Getwd()
 	if err != nil {
-		panic(err)
+		log.Panic().Err(err)
 	}
+
 	downstreamFile := file(filepath.Join(cwd, "examples", "upstream-values.yaml"))
 	upstreamFile := file(filepath.Join(cwd, "examples", "downstream-values.yaml"))
 	diff, err := dyff.CompareInputFiles(upstreamFile, downstreamFile)
 	if err != nil {
-		panic(err)
+		log.Panic().Err(err)
 	}
+
 	changes := objx.Map{}
 	for _, v := range diff.Diffs {
 		changes = DetectChangedValues(v, changes)
 	}
 	yamlOutput, err := yaml.Marshal(&changes)
 	if err != nil {
-		fmt.Printf("Error while Marshaling. %v", err)
+		log.Error().Err(err).Msg("error while Marshaling")
 	}
 	switch output {
 	case "yaml":
@@ -114,9 +117,8 @@ func DetectChangedValues(diff dyff.Diff, changes objx.Map) objx.Map {
 func file(input string) ytbx.InputFile {
 	inputfile, err := ytbx.LoadFile(input)
 	if err != nil {
-		fmt.Sprintf("Failed to load input file from %s: %s", input, err.Error())
+		log.Panic().Err(err).Msg("failed to load input file")
 	}
-
 	return inputfile
 }
 
@@ -136,6 +138,6 @@ func CreateOutputFile(yamlOutput []byte) {
 	fileName := "examples/generated-values.yaml"
 	err := ioutil.WriteFile(fileName, yamlOutput, 0644)
 	if err != nil {
-		panic("Unable to write data into the file")
+		log.Panic().Err(err).Msg("unable to write data into the file")
 	}
 }
