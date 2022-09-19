@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v2"
+	"helm.sh/helm/v3/pkg/action"
+	"helm.sh/helm/v3/pkg/cli"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"github.com/gonvenience/ytbx"
@@ -28,15 +30,10 @@ var (
 	kubeConfigFile string
 	context        string
 	namespace      string
-	version        int
+	revision       int
 	output         string
+	settings       = cli.New()
 )
-
-type KubeConfigSetup struct {
-	Context        string
-	KubeConfigFile string
-	Namespace      string
-}
 
 type ChangeRequest struct {
 	Path    string
@@ -57,7 +54,7 @@ func init() {
 	}
 
 	flag.StringVar(&repo, "repo", "", "chart repository url where to locate the requested chart")
-	flag.IntVar(&version, "version", 0, "specify a version constraint for the chart version to use. This constraint can be a specific tag (e.g. 1.1.1) or it may reference a valid range (e.g. ^2.0.0). If this is not specified, the latest version is used")
+	flag.IntVar(&revision, "revision", 0, "specify a revision constraint for the chart revision to use. This constraint can be a specific tag (e.g. 1.1.1) or it may reference a valid range (e.g. ^2.0.0). If this is not specified, the latest revision is used")
 	flag.StringVar(&kubeConfigFile, "kubeconfig", defaultKubeConfigPath, "path to the kubeconfig file")
 	flag.StringVar(&context, "kube-context", "", "name of the kubeconfig context to use")
 	flag.StringVar(&namespace, "namespace", "", "namespace scope for this request")
@@ -72,8 +69,8 @@ func main() {
 		os.Exit(2)
 	}
 
-	if version == 0 {
-		log.Info().Msg("version not specified. default: 0")
+	if revision == 0 {
+		log.Info().Msg("revision not specified. default: 0")
 	}
 
 	cwd, err := os.Getwd()
@@ -81,26 +78,51 @@ func main() {
 		log.Panic().Err(err)
 	}
 
-	downstreamFile := file(filepath.Join(cwd, "examples", "upstream-values.yaml"))
-	upstreamFile := file(filepath.Join(cwd, "examples", "downstream-values.yaml"))
-	diff, err := dyff.CompareInputFiles(upstreamFile, downstreamFile)
+	helm, err := NewHelmClient()
 	if err != nil {
-		log.Panic().Err(err)
+		log.Panic().Err(err).Msg("fetching helm client")
+	}
+
+	rv, err := HelmFetch(helm)
+	if err != nil {
+		log.Panic().Err(err).Msg("fetching helm repo")
+	}
+	releaseValues, err := yaml.Marshal(rv)
+	if err != nil {
+		log.Error().Err(err).Msg("error while Marshaling")
+	}
+
+	err = CreateOutputFile(releaseValues, "examples/upstream-values-tmp.yaml")
+	if err != nil {
+		log.Panic().Err(err).Msg("unable to write data into the file")
+	}
+
+	downstreamFile := file(filepath.Join(cwd, "examples", "upstream-values-tmp.yaml"))
+	upstreamFile := file(filepath.Join(cwd, "examples", "downstream-values-tmp.yaml"))
+	diff, err := dyff.CompareInputFiles(downstreamFile, upstreamFile)
+	if err != nil {
+		log.Panic().Err(err).Msg("unable to compare input files")
 	}
 
 	changes := objx.Map{}
 	for _, v := range diff.Diffs {
 		changes = DetectChangedValues(v, changes)
 	}
+
 	yamlOutput, err := yaml.Marshal(&changes)
 	if err != nil {
 		log.Error().Err(err).Msg("error while Marshaling")
 	}
+
 	switch output {
 	case "yaml":
-		CreateOutputFile(yamlOutput)
+		log.Info().Msgf("diff detected %v", changes)
+		err := CreateOutputFile(yamlOutput, "examples/generated-values-tmp.yaml")
+		if err != nil {
+			log.Panic().Err(err).Msg("unable to write data into the file")
+		}
 	default:
-		fmt.Println(string(yamlOutput))
+		log.Info().Msgf("diffdetected %v", changes)
 	}
 }
 
@@ -110,6 +132,7 @@ func DetectChangedValues(diff dyff.Diff, changes objx.Map) objx.Map {
 		keyPath = append(keyPath, e.Name)
 	}
 	keys := strings.Join(keyPath, ".")
+	fmt.Println()
 	changes.Set(keys, diff.Details[0].From.Value)
 	return changes
 }
@@ -134,10 +157,55 @@ func findKubeConfig() (string, error) {
 	return path, nil
 }
 
-func CreateOutputFile(yamlOutput []byte) {
-	fileName := "examples/generated-values.yaml"
-	err := ioutil.WriteFile(fileName, yamlOutput, 0644)
+func CreateOutputFile(yamlOutput []byte, path string) error {
+	log.Info().Msgf("creating file: %s", path)
+	err := ioutil.WriteFile(path, yamlOutput, 0644)
 	if err != nil {
-		log.Panic().Err(err).Msg("unable to write data into the file")
+		return err
 	}
+	return nil
+}
+
+func NewHelmClient() (*action.Configuration, error) {
+	actionConfig := new(action.Configuration)
+
+	settings.KubeContext = context
+	settings.KubeConfig = kubeConfigFile
+	if namespace == "" {
+		namespace = settings.Namespace()
+	}
+	err := actionConfig.Init(settings.RESTClientGetter(), namespace, os.Getenv("HELM_DRIVER"), func(format string, v ...interface{}) {
+		log.Info().Msgf(format, v)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return actionConfig, nil
+}
+
+func HelmFetch(h *action.Configuration) (map[string]interface{}, error) {
+	c := action.NewGet(h)
+	rel, err := c.Run(repo)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: Fix release revision logic
+	var previousRelease int
+	if revision == 0 {
+		previousRelease = rel.Version - 1
+	} else {
+		previousRelease = revision
+	}
+
+	val := action.NewGetValues(h)
+	val.Version = previousRelease
+	val.AllValues = true
+
+	relVal, err := val.Run(rel.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	return relVal, nil
 }

@@ -10,7 +10,7 @@
       "request": "launch",
       "mode": "auto",
       "program": "${workspaceFolder}",
-      "args": ["-repo", "example"]
+      "args": ["-repo", "coredns", "-output", "yaml"]
     }
   ]
 }
