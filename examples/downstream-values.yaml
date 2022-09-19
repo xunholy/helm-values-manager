@@ -26,9 +26,9 @@ initContainer:
   image:
     pullPolicy: IfNotPresent
     repository: willdockerhub/git-sync
-    tag: v3.3.4
+    tag: v3.3.5
 nameOverride: ""
 nodeSelector: {}
 podAnnotations: {}
 podSecurityContext: {}
-replicaCount: 1
+replicaCount: 3

@@ -3,12 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"time"
 
+	"gopkg.in/yaml.v2"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"github.com/gonvenience/ytbx"
@@ -27,6 +29,7 @@ var (
 	context        string
 	namespace      string
 	version        int
+	output         string
 )
 
 type KubeConfigSetup struct {
@@ -58,6 +61,7 @@ func init() {
 	flag.StringVar(&kubeConfigFile, "kubeconfig", defaultKubeConfigPath, "path to the kubeconfig file")
 	flag.StringVar(&context, "kube-context", "", "name of the kubeconfig context to use")
 	flag.StringVar(&namespace, "namespace", "", "namespace scope for this request")
+	flag.StringVar(&output, "output", "stdout", "output format. One of: (yaml,stdout)")
 }
 
 func main() {
@@ -85,7 +89,16 @@ func main() {
 	for _, v := range diff.Diffs {
 		changes = DetectChangedValues(v, changes)
 	}
-	fmt.Println(changes)
+	yamlOutput, err := yaml.Marshal(&changes)
+	if err != nil {
+		fmt.Printf("Error while Marshaling. %v", err)
+	}
+	switch output {
+	case "yaml":
+		CreateOutputFile(yamlOutput)
+	default:
+		fmt.Println(string(yamlOutput))
+	}
 }
 
 func DetectChangedValues(diff dyff.Diff, changes objx.Map) objx.Map {
@@ -95,16 +108,6 @@ func DetectChangedValues(diff dyff.Diff, changes objx.Map) objx.Map {
 	}
 	keys := strings.Join(keyPath, ".")
 	changes.Set(keys, diff.Details[0].From.Value)
-	return changes
-}
-
-func DetectChangedValuesUpstream(diff dyff.Diff, changes objx.Map) objx.Map {
-	var keyPath []string
-	for _, e := range diff.Path.PathElements {
-		keyPath = append(keyPath, e.Name)
-	}
-	keys := strings.Join(keyPath, ".")
-	changes.Set(keys, diff.Details[0].To.Value)
 	return changes
 }
 
@@ -127,4 +130,12 @@ func findKubeConfig() (string, error) {
 		return "", err
 	}
 	return path, nil
+}
+
+func CreateOutputFile(yamlOutput []byte) {
+	fileName := "examples/generated-values.yaml"
+	err := ioutil.WriteFile(fileName, yamlOutput, 0644)
+	if err != nil {
+		panic("Unable to write data into the file")
+	}
 }
