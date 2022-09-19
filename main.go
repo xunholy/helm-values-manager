@@ -2,17 +2,23 @@ package main
 
 import (
 	"flag"
+	"fmt"
+	"io/ioutil"
 	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
 	"time"
 
-	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/cli"
-	"helm.sh/helm/v3/pkg/release"
+	"gopkg.in/yaml.v2"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	"github.com/gonvenience/ytbx"
+	"github.com/homeport/dyff/pkg/dyff"
 	"github.com/mitchellh/go-homedir"
 	"github.com/rs/zerolog"
 	log "github.com/rs/zerolog/log"
+	"github.com/stretchr/objx"
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 )
@@ -23,7 +29,7 @@ var (
 	context        string
 	namespace      string
 	version        int
-	settings       = cli.New()
+	output         string
 )
 
 type KubeConfigSetup struct {
@@ -32,7 +38,16 @@ type KubeConfigSetup struct {
 	Namespace      string
 }
 
-func (e *KubeConfigSetup) init() {
+type ChangeRequest struct {
+	Path    string
+	Content reflect.Value
+}
+
+type Changes struct {
+	Items []*ChangeRequest
+}
+
+func init() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339})
 
 	// TODO: Derive namespace and context from kubeconfig
@@ -46,6 +61,7 @@ func (e *KubeConfigSetup) init() {
 	flag.StringVar(&kubeConfigFile, "kubeconfig", defaultKubeConfigPath, "path to the kubeconfig file")
 	flag.StringVar(&context, "kube-context", "", "name of the kubeconfig context to use")
 	flag.StringVar(&namespace, "namespace", "", "namespace scope for this request")
+	flag.StringVar(&output, "output", "stdout", "output format. One of: (yaml,stdout)")
 }
 
 func main() {
@@ -59,6 +75,49 @@ func main() {
 	if version == 0 {
 		log.Info().Msg("version not specified. default: 0")
 	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	downstreamFile := file(filepath.Join(cwd, "examples", "upstream-values.yaml"))
+	upstreamFile := file(filepath.Join(cwd, "examples", "downstream-values.yaml"))
+	diff, err := dyff.CompareInputFiles(upstreamFile, downstreamFile)
+	if err != nil {
+		panic(err)
+	}
+	changes := objx.Map{}
+	for _, v := range diff.Diffs {
+		changes = DetectChangedValues(v, changes)
+	}
+	yamlOutput, err := yaml.Marshal(&changes)
+	if err != nil {
+		fmt.Printf("Error while Marshaling. %v", err)
+	}
+	switch output {
+	case "yaml":
+		CreateOutputFile(yamlOutput)
+	default:
+		fmt.Println(string(yamlOutput))
+	}
+}
+
+func DetectChangedValues(diff dyff.Diff, changes objx.Map) objx.Map {
+	var keyPath []string
+	for _, e := range diff.Path.PathElements {
+		keyPath = append(keyPath, e.Name)
+	}
+	keys := strings.Join(keyPath, ".")
+	changes.Set(keys, diff.Details[0].From.Value)
+	return changes
+}
+
+func file(input string) ytbx.InputFile {
+	inputfile, err := ytbx.LoadFile(input)
+	if err != nil {
+		fmt.Sprintf("Failed to load input file from %s: %s", input, err.Error())
+	}
+
+	return inputfile
 }
 
 func findKubeConfig() (string, error) {
@@ -73,81 +132,10 @@ func findKubeConfig() (string, error) {
 	return path, nil
 }
 
-// TODO: Refactor - Currently pulled from OSS
-// NewClient return a new helm client with provided config
-func NewClient(namespace string, kfcg KubeConfigSetup) (*action.Configuration, error) {
-	actionConfig := new(action.Configuration)
-
-	return func(ac *action.Configuration) (*action.Configuration, error) {
-		settings.KubeContext = kfcg.Context
-		settings.KubeConfig = kfcg.KubeConfigFile
-		if namespace == "" {
-			namespace = settings.Namespace()
-		} else {
-			kfcg.Namespace = settings.Namespace()
-		}
-		err := actionConfig.Init(settings.RESTClientGetter(), namespace, os.Getenv("HELM_DRIVER"), func(format string, v ...interface{}) {
-			// log.Debug(fmt.Sprintf(format, v))
-		})
-		if err != nil {
-			return nil, err
-		}
-		return ac, nil
-
-	}(actionConfig)
-}
-
-// getLastRelease fetch the latest release
-func getLastRelease(release string, ac *action.Get) (*release.Release, error) {
-	rel, err := ac.Run(release)
+func CreateOutputFile(yamlOutput []byte) {
+	fileName := "examples/generated-values.yaml"
+	err := ioutil.WriteFile(fileName, yamlOutput, 0644)
 	if err != nil {
-		return nil, err
+		panic("Unable to write data into the file")
 	}
-	return rel, nil
-}
-
-// getHelmClient returns action configuration based on Helm env
-func getHelmClient() (*action.Configuration, error) {
-	kubeConfig := KubeConfigSetup{
-		Context:        context,
-		KubeConfigFile: kubeConfigFile,
-		Namespace:      namespace,
-	}
-	ac, err := NewClient(kubeConfig.Namespace, kubeConfig)
-	if err != nil {
-		return nil, err
-	}
-	return ac, nil
-}
-
-// runFetch retrieve values for a given old release
-func runFetch(args []string) (map[string]interface{}, error) {
-	repo := args[0]
-
-	ac, err := getHelmClient()
-	if err != nil {
-		return nil, err
-	}
-	p := action.NewGet(ac)
-	rel, err := getLastRelease(repo, p)
-	if err != nil {
-		return nil, err
-	}
-
-	var previousRelease int
-	if version == 0 {
-		previousRelease = rel.Version - 1
-	} else {
-		previousRelease = version
-	}
-	gVal := action.NewGetValues(ac)
-	gVal.Version = previousRelease
-	gVal.AllValues = true
-
-	relVal, err := gVal.Run(rel.Name)
-	if err != nil {
-		return nil, err
-	}
-
-	return relVal, nil
 }

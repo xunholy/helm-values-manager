@@ -1,0 +1,7 @@
+container:
+  image:
+    repository: xunholy/example-1
+initContainer:
+  image:
+    tag: v3.3.5
+replicaCount: "3"
