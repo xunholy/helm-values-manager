@@ -26,20 +26,9 @@ func NewManager(paths analyzer.PathOptions, format string, optimize bool) *Manag
 }
 
 // WriteResults writes all the analysis results to files
-func (m *Manager) WriteResults(status analyzer.ValueStatus, generatedValues map[string]interface{}) error {
-	// Always generate the generated-values.yaml file for compatibility
-	generatedContent, err := yaml.Marshal(generatedValues)
-	if err != nil {
-		log.Error().Err(err).Msg("error while marshaling generated values")
-		return err
-	}
-
-	if err = util.CreateOutputFile(generatedContent, m.Paths.GeneratedValuesPath); err != nil {
-		log.Error().Err(err).Msg("unable to write generated values file")
-		return err
-	}
-
-	log.Info().Msgf("Generated values written to: %s", m.Paths.GeneratedValuesPath)
+func (m *Manager) WriteResults(status analyzer.ValueStatus) error {
+	// We're no longer generating the generated-values.yaml file
+	// as it's not providing clear value to users
 
 	// Always generate optimized values (downstream without redundant values)
 	// even if optimize flag is not set, for compatibility with tests

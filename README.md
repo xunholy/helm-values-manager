@@ -82,12 +82,13 @@ helm values-manager --upstream chart-values.yaml --downstream my-values.yaml --o
 
 ## Understanding Output
 
-Helm Values Manager generates several output files in the target directory (default: `values-analysis/`):
+Helm Values Manager generates three output files in the target directory (default: `values-analysis/`):
 
-- **generated-values.yaml**: Values that exist in your downstream file but not in upstream
+- **optimized-values.yaml**: A cleaned version of your values file without redundant values (values that exactly match the upstream defaults)
 - **unsupported-values.yaml**: Values in your file that don't have a corresponding key in the upstream chart
 - **redundant-values.yaml**: Values in your file that match the upstream defaults (can be safely removed)
-- **optimized-values.yaml**: A cleaned version of your values file without the redundant values
+
+These files help you understand how your custom values relate to the chart defaults and help you maintain cleaner configurations.
 
 ## Options
 

@@ -37,13 +37,6 @@ echo -e "${YELLOW}Processing values with default output directory...${NC}"
 echo -e "${YELLOW}Checking output files...${NC}"
 DEFAULT_OUTPUT_DIR="values-analysis"
 
-if [ -f "${DEFAULT_OUTPUT_DIR}/generated-values.yaml" ]; then
-  echo -e "${GREEN}✓ ${DEFAULT_OUTPUT_DIR}/generated-values.yaml created${NC}"
-else
-  echo -e "${RED}✗ ${DEFAULT_OUTPUT_DIR}/generated-values.yaml not created${NC}"
-  exit 1
-fi
-
 if [ -f "${DEFAULT_OUTPUT_DIR}/optimized-values.yaml" ]; then
   echo -e "${GREEN}✓ ${DEFAULT_OUTPUT_DIR}/optimized-values.yaml created${NC}"
 else
@@ -71,13 +64,6 @@ CUSTOM_OUTPUT_DIR="custom-output"
 
 # Check if files were created in the custom directory
 echo -e "${YELLOW}Checking output files in custom directory...${NC}"
-if [ -f "${CUSTOM_OUTPUT_DIR}/generated-values.yaml" ]; then
-  echo -e "${GREEN}✓ ${CUSTOM_OUTPUT_DIR}/generated-values.yaml created${NC}"
-else
-  echo -e "${RED}✗ ${CUSTOM_OUTPUT_DIR}/generated-values.yaml not created${NC}"
-  exit 1
-fi
-
 if [ -f "${CUSTOM_OUTPUT_DIR}/optimized-values.yaml" ]; then
   echo -e "${GREEN}✓ ${CUSTOM_OUTPUT_DIR}/optimized-values.yaml created${NC}"
 else
