@@ -9,8 +9,11 @@ description: |-
     # Compare with a Helm release
     $ helm values-manager --repo my-release --downstream my-values.yaml
 
-    # Compare with values from a Helm chart
-    $ helm values-manager --chart nginx-ingress --chart-version 1.0.0 --downstream my-values.yaml
+    # Compare with values from a Helm chart (latest version)
+    $ helm values-manager --chart bitnami/nginx --downstream my-values.yaml
+
+    # Compare with values from a specific chart version
+    $ helm values-manager --chart bitnami/nginx --version 15.0.0 --downstream my-values.yaml
 
     # Compare local files and optimize
     $ helm values-manager --upstream default.yaml --downstream custom.yaml --optimize

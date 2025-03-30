@@ -1,45 +1,73 @@
 # Test downstream values file (user custom values)
 # Contains both redundant and unsupported values
+# Based on bitnami/nginx chart values
 
 # Redundant values (same as upstream)
 image:
-  repository: test/app
+  registry: docker.io
+  repository: bitnami/nginx
   pullPolicy: IfNotPresent
 
 # Modified values (should be kept)
 image:
-  tag: 1.2.0  # Different from upstream
+  tag: 1.28.0-debian-12-r0  # Different from upstream
+  debug: true  # Different from upstream
 
 # Unsupported values (not in upstream)
 unsupportedKey: "This doesn't exist in upstream"
-deprecated:
-  feature:
-    enabled: true
-    settings:
-      timeout: 30
+podSecurityContext:
+  enabled: true  # Modified from upstream (false → true)
+  fsGroup: 1001  # Not in upstream structure
 
 # Nested redundant values
-resources:
-  limits:
-    cpu: 100m    # Redundant
-    memory: 256Mi  # Modified (different from upstream)
-  requests:
-    cpu: 50m     # Redundant
-    memory: 64Mi  # Redundant
-
-# Nested unsupported values
 service:
   type: ClusterIP  # Redundant
   port: 80         # Redundant
-  nodePort: 30080  # Unsupported
+
+# Modified service values
+service:
+  type: NodePort   # Modified
+  nodePorts:
+    http: 30080    # Modified
+
+# Nested unsupported values
+service:
+  extraTcpPorts:   # Unsupported
+    - name: metrics
+      port: 9113
   extraConfig:     # Unsupported
     timeout: 5s
 
-# Modified structure
-configMap:
-  data:
-    KEY1: newvalue  # Modified
-    KEY3: value3    # Added
+# Modified structure for resources
+resources:
+  limits:
+    cpu: 200m      # Added
+    memory: 256Mi  # Added
+  requests:
+    cpu: 100m      # Added
+    memory: 128Mi  # Added
+
+# Modified configuration
+livenessProbe:
+  enabled: true    # Redundant
+  initialDelaySeconds: 60  # Modified
+  periodSeconds: 20        # Modified
 
 # Values with different types but same effective value
-replicas: "1"  # String instead of int, but same value
+replicaCount: "1"  # String instead of int, but same value
+
+# Real-world example: enabling ingress
+ingress:
+  enabled: true    # Modified
+  hostname: nginx.example.com  # Modified
+  tls: true        # Modified
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+
+# Production-ready configuration
+containerSecurityContext:
+  enabled: true        # Modified from upstream
+  runAsUser: 1001      # Redundant
+  runAsNonRoot: true   # Redundant
+  readOnlyRootFilesystem: true  # Added

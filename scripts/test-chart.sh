@@ -44,7 +44,18 @@ if [ ! -s "$TEMP_DIR/upstream-values.yaml" ]; then
 fi
 
 echo "Running analysis..."
-# Run the tool
+# Run the tool with upstream values
+echo "Method 1: Using downloaded values file:"
 ./bin/helm-values-manager --upstream "$TEMP_DIR/upstream-values.yaml" --downstream "$DOWNSTREAM" --optimize
 
-echo "Done! Results are in the values-analysis directory."
+# Test with the --chart option directly
+echo -e "\nMethod 2: Using --chart option directly:"
+if [ -z "$VERSION" ]; then
+    echo "Running helm-values-manager with chart (latest version)..."
+    ./bin/helm-values-manager --chart "$CHART" --downstream "$DOWNSTREAM" --optimize
+else
+    echo "Running helm-values-manager with chart version $VERSION..."
+    ./bin/helm-values-manager --chart "$CHART" --version "$VERSION" --downstream "$DOWNSTREAM" --optimize
+fi
+
+echo -e "\nDone! Results are in the values-analysis directory."
