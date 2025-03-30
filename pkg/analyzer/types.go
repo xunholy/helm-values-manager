@@ -8,6 +8,7 @@ import (
 type ValueStatus struct {
 	Redundant   map[string]interface{} `yaml:"redundant,omitempty"`
 	Unsupported map[string]interface{} `yaml:"unsupported,omitempty"`
+	Commented   map[string]interface{} `yaml:"commented,omitempty"`
 	Optimized   map[string]interface{} `yaml:"optimized,omitempty"`
 }
 

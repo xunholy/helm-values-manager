@@ -1,6 +1,7 @@
 package helm
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -192,4 +193,49 @@ func loadLocalChartValues(chartPath string) (map[string]interface{}, error) {
 	}
 
 	return chart.Values, nil
+}
+
+// FetchChartValuesRaw gets the raw YAML values from a Helm chart
+func FetchChartValuesRaw(chartName, version string) ([]byte, error) {
+	log.Info().Msgf("Fetching values from Helm chart: %s (version: %s)", chartName, version)
+	log.Info().Msg("Using helm command to download chart values with comments preserved")
+
+	// Construct the command to fetch raw values
+	args := []string{"show", "values"}
+
+	// Add version if specified
+	if version != "" {
+		args = append(args, "--version", version)
+		log.Info().Msgf("Using chart version: %s", version)
+	} else {
+		log.Info().Msg("Using latest chart version")
+	}
+
+	// Add chart name
+	args = append(args, chartName)
+
+	// Execute the command
+	cmd := exec.Command("helm", args...)
+
+	// Capture the output
+	output, err := cmd.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return nil, fmt.Errorf("helm command failed: %s", string(exitErr.Stderr))
+		}
+		return nil, fmt.Errorf("failed to execute helm command: %w", err)
+	}
+
+	// Explicitly check if we have any commented fields by searching for common patterns
+	if len(output) > 0 {
+		yamlStr := string(output)
+		if strings.Contains(yamlStr, "#") {
+			log.Info().Msg("Successfully retrieved raw chart values with comments preserved")
+		} else {
+			log.Warn().Msg("Raw chart values fetched, but no comments detected. Some commented values may not be detected correctly.")
+		}
+	}
+
+	return output, nil
 }

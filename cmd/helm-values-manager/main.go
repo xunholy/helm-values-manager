@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -68,6 +69,7 @@ func main() {
 	// Determine source of upstream values
 	upstreamPath := ""
 	var upstreamValues map[string]interface{}
+	var originalUpstreamYAML []byte
 	var err error
 
 	// Option 1: Use provided upstream file if specified
@@ -76,30 +78,63 @@ func main() {
 		upstreamPath = upstreamValuesFile
 
 		// Load upstream values
-		yamlContent, err := os.ReadFile(upstreamValuesFile)
+		originalUpstreamYAML, err = os.ReadFile(upstreamValuesFile)
 		if err != nil {
 			log.Fatal().Err(err).Msgf("failed to read upstream values file: %s", upstreamValuesFile)
 		}
 
-		if err := yaml.Unmarshal(yamlContent, &upstreamValues); err != nil {
+		if err := yaml.Unmarshal(originalUpstreamYAML, &upstreamValues); err != nil {
 			log.Fatal().Err(err).Msg("failed to parse upstream values YAML")
 		}
 	} else if chartName != "" {
 		// Option 2: Fetch upstream values from a Helm chart
 		log.Info().Msgf("Fetching upstream values from chart: %s", chartName)
-		upstreamValues, err = helm.FetchChartValues(chartName, chartVersion)
-		if err != nil {
-			log.Fatal().Err(err).Msg("Unable to fetch values from Helm chart")
+
+		// Special handling for known charts with lots of commented fields
+		if strings.Contains(chartName, "cilium") {
+			log.Warn().Msg("Note: The cilium chart has many commented values. For best results with cilium, use:")
+			log.Warn().Msgf("helm show values %s > cilium-values.yaml", chartName)
+			log.Warn().Msg("Then run: helm-values-manager --upstream cilium-values.yaml --downstream your-values.yaml")
+		}
+
+		// First get the raw YAML content to preserve comments
+		var helmErr error
+		originalUpstreamYAML, helmErr = helm.FetchChartValuesRaw(chartName, chartVersion)
+		if helmErr != nil {
+			log.Warn().Err(helmErr).Msg("Unable to fetch raw values YAML from Helm chart, comments will not be preserved")
+			// Fallback to the regular method
+			upstreamValues, err = helm.FetchChartValues(chartName, chartVersion)
+			if err != nil {
+				log.Fatal().Err(err).Msg("Unable to fetch values from Helm chart")
+			}
+		} else {
+			// Parse the YAML content for processing
+			if err := yaml.Unmarshal(originalUpstreamYAML, &upstreamValues); err != nil {
+				log.Warn().Err(err).Msg("Error parsing raw YAML, fallback to regular fetch")
+				// Fallback to the regular method
+				upstreamValues, err = helm.FetchChartValues(chartName, chartVersion)
+				if err != nil {
+					log.Fatal().Err(err).Msg("Unable to fetch values from Helm chart")
+				}
+				// Clear the original YAML since it couldn't be parsed
+				originalUpstreamYAML = nil
+			}
 		}
 
 		// Save chart values to file
 		upstreamPath = filepath.Join(outDir, "chart-values.yaml")
-		marshaledValues, err := yaml.Marshal(upstreamValues)
-		if err != nil {
-			log.Fatal().Err(err).Msg("Failed to marshal chart values")
+		// Save the original YAML if available, otherwise marshal from map
+		var contentToSave []byte
+		if originalUpstreamYAML != nil {
+			contentToSave = originalUpstreamYAML
+		} else {
+			contentToSave, err = yaml.Marshal(upstreamValues)
+			if err != nil {
+				log.Fatal().Err(err).Msg("Failed to marshal chart values")
+			}
 		}
 
-		if err := util.CreateOutputFile(marshaledValues, upstreamPath); err != nil {
+		if err := util.CreateOutputFile(contentToSave, upstreamPath); err != nil {
 			log.Fatal().Err(err).Msg("Failed to write chart values to file")
 		}
 	} else if repo != "" {
@@ -151,25 +186,29 @@ func main() {
 	}
 
 	// Process the values
-	processValues(upstreamValues, downstreamValues, paths)
+	processValues(upstreamValues, downstreamValues, paths, originalUpstreamYAML)
 }
 
 // processValues analyzes upstream and downstream values and generates reports
-func processValues(upstreamValues, downstreamValues map[string]interface{}, paths analyzer.PathOptions) {
+func processValues(upstreamValues, downstreamValues map[string]interface{}, paths analyzer.PathOptions, originalUpstreamYAML []byte) {
 	log.Info().Msg("Processing upstream and downstream values")
 
-	// Create analyzer
-	valueAnalyzer := analyzer.NewAnalyzer(upstreamValues, downstreamValues)
+	// Create analyzer with original YAML for better analysis
+	var valueAnalyzer *analyzer.Analyzer
+	if originalUpstreamYAML != nil && len(originalUpstreamYAML) > 0 {
+		valueAnalyzer = analyzer.NewAnalyzerWithOriginalYAML(upstreamValues, downstreamValues, originalUpstreamYAML)
+		log.Info().Msg("Using original YAML for enhanced comment detection")
+	} else {
+		valueAnalyzer = analyzer.NewAnalyzer(upstreamValues, downstreamValues)
+		log.Info().Msg("No original YAML available, comment detection will be limited")
+	}
 
 	// Analyze values
 	valueStatus := valueAnalyzer.Analyze()
 
-	// Get generated values
-	generatedValues := valueAnalyzer.CreateGeneratedValues()
-
 	// Create output manager and write results
 	outputMgr := output.NewManager(paths, outputFormat, optimize)
-	if err := outputMgr.WriteResults(valueStatus, generatedValues); err != nil {
+	if err := outputMgr.WriteResults(valueStatus); err != nil {
 		log.Fatal().Err(err).Msg("Failed to write analysis results")
 	}
 }

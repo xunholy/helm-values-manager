@@ -82,6 +82,35 @@ helm install my-nginx bitnami/nginx
 helm uninstall my-nginx
 ```
 
+### Special Case: Charts with Commented Options (like Cilium)
+
+Some Helm charts, most notably `cilium/cilium`, use commented fields extensively to show available configuration options rather than having them as actual keys with default values. For example:
+
+```yaml
+# -- Configure the kube-proxy replacement in Cilium BPF datapath
+# Valid options are "true" or "false".
+#kubeProxyReplacement: "false"
+```
+
+When working with such charts, Helm Values Manager has special support:
+
+1. It detects values in your file that correspond to commented options in the chart
+2. It classifies these as "commented" rather than "unsupported"
+3. It outputs them to a separate `commented-values.yaml` file
+
+For the best results with charts like Cilium:
+
+```bash
+# Method 1 (RECOMMENDED for Cilium and similar charts):
+# Download chart values preserving all comments
+helm show values cilium/cilium > cilium-values.yaml
+
+# Run analysis with the downloaded file
+./bin/helm-values-manager --upstream cilium-values.yaml --downstream my-values.yaml
+```
+
+This ensures all commented fields are properly detected and classified.
+
 ### Debugging Tips
 
 If you encounter issues with Helm repositories:
