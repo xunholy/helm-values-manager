@@ -1,0 +1,45 @@
+# Test downstream values file (user custom values)
+# Contains both redundant and unsupported values
+
+# Redundant values (same as upstream)
+image:
+  repository: test/app
+  pullPolicy: IfNotPresent
+
+# Modified values (should be kept)
+image:
+  tag: 1.2.0  # Different from upstream
+
+# Unsupported values (not in upstream)
+unsupportedKey: "This doesn't exist in upstream"
+deprecated:
+  feature:
+    enabled: true
+    settings:
+      timeout: 30
+
+# Nested redundant values
+resources:
+  limits:
+    cpu: 100m    # Redundant
+    memory: 256Mi  # Modified (different from upstream)
+  requests:
+    cpu: 50m     # Redundant
+    memory: 64Mi  # Redundant
+
+# Nested unsupported values
+service:
+  type: ClusterIP  # Redundant
+  port: 80         # Redundant
+  nodePort: 30080  # Unsupported
+  extraConfig:     # Unsupported
+    timeout: 5s
+
+# Modified structure
+configMap:
+  data:
+    KEY1: newvalue  # Modified
+    KEY3: value3    # Added
+
+# Values with different types but same effective value
+replicas: "1"  # String instead of int, but same value

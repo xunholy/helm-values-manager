@@ -1,9 +1,26 @@
-name: "value-manager"
-version: "0.0.1"
-usage: "detect unused and/or outdated values being used"
-description: "detect unused and/or outdated values being used"
-command: "$HELM_PLUGIN_DIR/bin/value-manager"
+name: "values-manager"
+version: "0.1.0"
+usage: "Analyze, optimize, and clean Helm values.yaml files"
+description: |-
+  A Helm plugin to scan and optimize values.yaml files by intelligently detecting
+  unsupported and redundant values in your Helm configurations.
+
+  Examples:
+    # Compare with a Helm release
+    $ helm values-manager --repo my-release --downstream my-values.yaml
+
+    # Compare with values from a Helm chart
+    $ helm values-manager --chart nginx-ingress --chart-version 1.0.0 --downstream my-values.yaml
+
+    # Compare local files and optimize
+    $ helm values-manager --upstream default.yaml --downstream custom.yaml --optimize
+
+    # Specify custom output directory
+    $ helm values-manager --upstream default.yaml --downstream custom.yaml --outdir ./analysis
+command: "$HELM_PLUGIN_DIR/bin/helm-values-manager"
 hooks:
- install: "cd $HELM_PLUGIN_DIR; ./scripts/install.sh"
- update: "cd $HELM_PLUGIN_DIR; ./scripts/update.sh"
- delete: "cd $HELM_PLUGIN_DIR; ./scripts/delete.sh"
+  install: "cd $HELM_PLUGIN_DIR && ./scripts/install.sh"
+  update: "cd $HELM_PLUGIN_DIR && ./scripts/install.sh"
+  delete: "cd $HELM_PLUGIN_DIR && ./scripts/delete.sh"
+ignoreFlags: false
+useTunnel: false
