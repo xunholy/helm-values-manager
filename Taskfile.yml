@@ -1,0 +1,69 @@
+version: '3'
+
+vars:
+  BIN_NAME: helm-values-manager
+  BIN_DIR: bin
+  MAIN_PATH: cmd/helm-values-manager/main.go
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
+
+tasks:
+  build:
+    desc: Build the application
+    cmds:
+      - go build -ldflags "-X main.version={{.VERSION}}" -o {{.BIN_DIR}}/{{.BIN_NAME}} {{.MAIN_PATH}}
+      - chmod +x {{.BIN_DIR}}/{{.BIN_NAME}}
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -rf bin
+      - rm -rf values-analysis
+      - rm -rf custom-output
+
+  test:
+    desc: Run unit tests
+    cmds:
+      - go test -v ./...
+
+  integration-test:
+    desc: Run integration tests
+    deps: [build]
+    cmds:
+      - ./scripts/test.sh
+
+  fmt:
+    desc: Format code
+    cmds:
+      - go fmt ./...
+
+  vet:
+    desc: Vet code
+    cmds:
+      - go vet ./...
+
+  docker:
+    desc: Build a Docker image
+    deps: [build]
+    cmds:
+      - docker build -t {{.BIN_NAME}}:{{.VERSION}} .
+
+  docker-push:
+    desc: Push Docker image to registry
+    deps: [docker]
+    cmds:
+      - docker tag {{.BIN_NAME}}:{{.VERSION}} ghcr.io/xunholy/{{.BIN_NAME}}:{{.VERSION}}
+      - docker push ghcr.io/xunholy/{{.BIN_NAME}}:{{.VERSION}}
+
+  ci:
+    desc: Run CI tasks
+    deps: [clean, fmt, vet, test, build]
+
+  release:
+    desc: Release a new version
+    cmds:
+      - goreleaser release --rm-dist
+
+  default:
+    desc: Default task
+    deps: [build]
