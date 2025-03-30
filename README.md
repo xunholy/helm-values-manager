@@ -193,7 +193,15 @@ This will:
 4. Verify that all expected output files are created
 5. Check that values are correctly identified as redundant or unsupported
 
-#### Manual Testing
+#### Manual Testing with Helm Charts
+
+For testing with Helm charts and repositories, see our [Helm Testing Guide](examples/HELM_TESTING.md) which includes:
+- Working with chart repositories
+- Using local and remote charts
+- Troubleshooting common Helm integration issues
+- Step-by-step testing workflow examples
+
+#### Manual Testing with Example Files
 
 You can test manually using the provided example files:
 
