@@ -36,7 +36,7 @@ jobs:
         run: task integration-test
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: helm-values-manager
           path: bin/helm-values-manager
