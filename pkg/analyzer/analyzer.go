@@ -41,17 +41,6 @@ func (a *Analyzer) Analyze() ValueStatus {
 	return valueStatus
 }
 
-// CreateGeneratedValues creates a map of values that exist in downstream but not in upstream
-func (a *Analyzer) CreateGeneratedValues() map[string]interface{} {
-	generatedValues := make(map[string]interface{})
-	for k, v := range a.DownstreamValues {
-		if _, exists := a.UpstreamValues[k]; !exists {
-			generatedValues[k] = v
-		}
-	}
-	return generatedValues
-}
-
 // handleServiceValues gives special attention to service configurations
 func (a *Analyzer) handleServiceValues(status *ValueStatus) {
 	upService, hasUpService := a.UpstreamValues["service"].(map[string]interface{})

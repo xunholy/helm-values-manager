@@ -164,12 +164,9 @@ func processValues(upstreamValues, downstreamValues map[string]interface{}, path
 	// Analyze values
 	valueStatus := valueAnalyzer.Analyze()
 
-	// Get generated values
-	generatedValues := valueAnalyzer.CreateGeneratedValues()
-
 	// Create output manager and write results
 	outputMgr := output.NewManager(paths, outputFormat, optimize)
-	if err := outputMgr.WriteResults(valueStatus, generatedValues); err != nil {
+	if err := outputMgr.WriteResults(valueStatus); err != nil {
 		log.Fatal().Err(err).Msg("Failed to write analysis results")
 	}
 }

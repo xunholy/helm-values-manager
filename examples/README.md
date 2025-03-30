@@ -128,6 +128,16 @@ The project includes two helper scripts for testing:
    ./scripts/test-chart.sh bitnami/nginx 15.0.0 examples/test-downstream.yaml
    ```
 
+## Understanding Output Files
+
+Helm Values Manager generates three output files in the target directory (default: `values-analysis/`):
+
+- **optimized-values.yaml**: A cleaned version of your values file without redundant values (values that exactly match the upstream defaults)
+- **unsupported-values.yaml**: Values in your file that don't have a corresponding key in the upstream chart
+- **redundant-values.yaml**: Values in your file that match the upstream defaults (can be safely removed)
+
+These files help you understand how your custom values relate to the chart defaults and help you maintain cleaner configurations.
+
 ## Tutorial: Optimizing Nginx Values
 
 This tutorial demonstrates how to use Helm Values Manager to optimize your values for Nginx.

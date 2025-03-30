@@ -25,7 +25,6 @@ type Changes struct {
 // PathOptions contains paths for output files
 type PathOptions struct {
 	OutputDir             string
-	GeneratedValuesPath   string
 	OptimizedValuesPath   string
 	UnsupportedValuesPath string
 	RedundantValuesPath   string
@@ -35,7 +34,6 @@ type PathOptions struct {
 func NewPathOptions(outputDir string) PathOptions {
 	return PathOptions{
 		OutputDir:             outputDir,
-		GeneratedValuesPath:   outputDir + "/generated-values.yaml",
 		OptimizedValuesPath:   outputDir + "/optimized-values.yaml",
 		UnsupportedValuesPath: outputDir + "/unsupported-values.yaml",
 		RedundantValuesPath:   outputDir + "/redundant-values.yaml",
