@@ -17,13 +17,13 @@ A Helm plugin that helps you manage your values.yaml files efficiently by analyz
 ### From Helm Plugin Repository
 
 ```bash
-helm plugin install https://github.com/xUnholy/helm-values-manager
+helm plugin install https://github.com/xunholy/helm-values-manager
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/xUnholy/helm-values-manager.git
+git clone https://github.com/xunholy/helm-values-manager.git
 cd helm-values-manager
 task build
 
