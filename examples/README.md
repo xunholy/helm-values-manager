@@ -1,25 +1,146 @@
-# Helm Values Manager Examples
+# Helm Values Manager Examples and Testing Guide
 
-This directory contains example values files and usage demonstrations for the Helm Values Manager tool.
+This directory contains example values files and usage guides for the Helm Values Manager tool.
 
 ## Example Files
 
-- `test-upstream.yaml` - Example chart defaults (upstream values)
-- `test-downstream.yaml` - Example user configuration with both redundant and unsupported values
+- `test-upstream.yaml` - Example chart defaults based on Bitnami Nginx chart
+- `test-downstream.yaml` - Example user configuration with redundant, modified, and unsupported values
 
-## Tutorial: Optimizing Nginx Ingress Controller Values
+## Testing with Helm Charts
 
-This tutorial demonstrates how to use Helm Values Manager to optimize your values for the popular nginx-ingress controller.
+This section explains how to test the Helm Values Manager with Helm charts, both locally and using repositories.
+
+### Prerequisites
+
+1. **Install Helm**:
+   ```bash
+   curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+   ```
+
+2. **Set up Helm repositories**:
+   ```bash
+   # Add Bitnami repository (widely used)
+   helm repo add bitnami https://charts.bitnami.com/bitnami
+
+   # Update repositories
+   helm repo update
+   ```
+
+### Testing Options
+
+#### 1. Test with Built-in Example Files (Easiest)
+
+The simplest approach is to use the provided example files:
+
+```bash
+# From the project root
+./bin/helm-values-manager --upstream examples/test-upstream.yaml --downstream examples/test-downstream.yaml
+```
+
+This will analyze the differences between the example files and generate reports in the `values-analysis` directory.
+
+#### 2. Test with Downloaded Chart Values (Reliable)
+
+Download a chart's default values and use them as the upstream source:
+
+```bash
+# Download chart's values.yaml
+helm show values bitnami/nginx > nginx-values.yaml
+
+# Create a custom values file with your changes
+echo "replicaCount: 3" > my-values.yaml
+
+# Run the analysis
+./bin/helm-values-manager --upstream nginx-values.yaml --downstream my-values.yaml
+```
+
+#### 3. Using the --chart Option with Version Support
+
+You can directly reference a chart to extract default values, with optional version specification:
+
+```bash
+# Latest version
+./bin/helm-values-manager --chart bitnami/nginx --downstream examples/test-downstream.yaml
+
+# Specific version
+./bin/helm-values-manager --chart bitnami/nginx --version 15.0.0 --downstream examples/test-downstream.yaml
+```
+
+#### 4. Test with an Installed Release (Requires Kubernetes)
+
+If you have a Kubernetes cluster configured:
+
+```bash
+# Install a chart
+helm install my-nginx bitnami/nginx
+
+# Run analysis against this release
+./bin/helm-values-manager --repo my-nginx --downstream examples/test-downstream.yaml
+
+# Clean up
+helm uninstall my-nginx
+```
+
+### Debugging Tips
+
+If you encounter issues with Helm repositories:
+
+1. **Check your Helm repositories**:
+   ```bash
+   helm repo list
+   ```
+
+2. **Verify repository connection**:
+   ```bash
+   helm search repo bitnami/nginx
+   ```
+
+3. **Manually download values** if automatic fetching fails:
+   ```bash
+   helm show values bitnami/nginx > nginx-values.yaml
+   ```
+
+4. **Set environment variables** if needed:
+   ```bash
+   export HELM_REPOSITORY_CONFIG="$HOME/.config/helm/repositories.yaml"
+   export HELM_REPOSITORY_CACHE="$HOME/.cache/helm/repository"
+   ```
+
+### Helper Scripts
+
+The project includes two helper scripts for testing:
+
+1. **test.sh** - Tests basic functionality using the example files:
+   ```bash
+   ./scripts/test.sh
+   ```
+
+2. **test-chart.sh** - Tests with any Helm chart:
+   ```bash
+   # Make it executable
+   chmod +x scripts/test-chart.sh
+
+   # Run with latest version
+   ./scripts/test-chart.sh bitnami/nginx examples/test-downstream.yaml
+
+   # Run with specific version
+   ./scripts/test-chart.sh bitnami/nginx 15.0.0 examples/test-downstream.yaml
+   ```
+
+## Tutorial: Optimizing Nginx Values
+
+This tutorial demonstrates how to use Helm Values Manager to optimize your values for Nginx.
 
 ### 1. Get the default values from the chart
 
 ```bash
-# Add the ingress-nginx repository
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+# Add the Bitnami repository if you haven't already
+helm repo add bitnami https://charts.bitnami.com/bitnami
 helm repo update
 
 # Download the default values to a file
-helm show values ingress-nginx/ingress-nginx > nginx-upstream-values.yaml
+helm show values bitnami/nginx > nginx-upstream-values.yaml
 ```
 
 ### 2. Create your custom values file
@@ -27,74 +148,50 @@ helm show values ingress-nginx/ingress-nginx > nginx-upstream-values.yaml
 Create a file called `my-nginx-values.yaml` with your customizations:
 
 ```yaml
-controller:
-  replicaCount: 2
-  service:
-    type: LoadBalancer
-    externalTrafficPolicy: Local
-  resources:
-    limits:
-      cpu: 100m
-      memory: 90Mi
-    requests:
-      cpu: 100m
-      memory: 90Mi
-  metrics:
-    enabled: true
+replicaCount: 3
+image:
+  tag: 1.25.0
+service:
+  type: NodePort
+  nodePorts:
+    http: 30080
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+metrics:
+  enabled: true
 
 # The following value doesn't exist in the upstream chart
-invalidSetting: "this will be detected as unsupported"
+customSetting: "this will be detected as unsupported"
 ```
 
 ### 3. Analyze with Helm Values Manager
 
 ```bash
-helm value-manager -upstream nginx-upstream-values.yaml -downstream my-nginx-values.yaml -outdir nginx-analysis
+helm values-manager --upstream nginx-upstream-values.yaml --downstream my-nginx-values.yaml
 ```
 
 ### 4. Generate optimized values
 
 ```bash
-helm value-manager -upstream nginx-upstream-values.yaml -downstream my-nginx-values.yaml -outdir nginx-analysis -optimize
+helm values-manager --upstream nginx-upstream-values.yaml --downstream my-nginx-values.yaml --optimize
 ```
 
 ### 5. Reviewing the output
 
 ```bash
 # Check unsupported values
-cat nginx-analysis/unsupported-values.yaml
+cat values-analysis/unsupported-values.yaml
 
 # Check redundant values (if any exist in your custom file)
-cat nginx-analysis/redundant-values.yaml
+cat values-analysis/redundant-values.yaml
 
 # Review optimized values
-cat nginx-analysis/optimized-values.yaml
-```
-
-## Direct Helm Release Example
-
-If you already have the ingress-nginx controller installed, you can analyze the active release:
-
-```bash
-# Analyze an existing release
-helm value-manager -repo ingress-nginx -outdir nginx-analysis
-
-# Optimize an existing release
-helm value-manager -repo ingress-nginx -outdir nginx-analysis -optimize
-```
-
-This will:
-1. Fetch the values from the current release
-2. Compare with the chart defaults
-3. Generate analysis files in the nginx-analysis directory
-
-## Comparing Between Releases
-
-You can also compare between different revisions of a chart:
-
-```bash
-# Compare with a specific revision
-helm value-manager -repo ingress-nginx -revision 2 -outdir nginx-analysis
+cat values-analysis/optimized-values.yaml
 ```
 
 ## Using in CI/CD
@@ -106,7 +203,7 @@ Here's an example of how you might use Helm Values Manager in a CI/CD pipeline:
 # Example CI script
 
 # Run the values manager
-helm value-manager -upstream nginx-upstream-values.yaml -downstream my-nginx-values.yaml -outdir ci-results
+helm values-manager --upstream nginx-upstream-values.yaml --downstream my-nginx-values.yaml --outdir ci-results
 
 # Check if unsupported values exist
 if [ -s "ci-results/unsupported-values.yaml" ]; then
@@ -117,9 +214,9 @@ fi
 
 # Deploy using optimized values if required
 if [ "$OPTIMIZE" == "true" ]; then
-  helm value-manager -upstream nginx-upstream-values.yaml -downstream my-nginx-values.yaml -outdir ci-results -optimize
-  helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx -f ci-results/optimized-values.yaml
+  helm values-manager --upstream nginx-upstream-values.yaml --downstream my-nginx-values.yaml --outdir ci-results --optimize
+  helm upgrade --install nginx bitnami/nginx -f ci-results/optimized-values.yaml
 else
-  helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx -f my-nginx-values.yaml
+  helm upgrade --install nginx bitnami/nginx -f my-nginx-values.yaml
 fi
 ```

@@ -1,38 +1,75 @@
-# Test upstream values file (chart defaults)
+# Test upstream values file (chart defaults for bitnami/nginx)
+# Based on actual Bitnami Nginx chart values
+
 image:
-  repository: test/app
-  tag: 1.0.0
+  registry: docker.io
+  repository: bitnami/nginx
+  tag: 1.27.4-debian-12-r6
   pullPolicy: IfNotPresent
+  debug: false
+  pullSecrets: []
 
-replicas: 1
+replicaCount: 1
+revisionHistoryLimit: 10
 
-resources:
-  limits:
-    cpu: 100m
-    memory: 128Mi
-  requests:
-    cpu: 50m
-    memory: 64Mi
+automountServiceAccountToken: false
+
+command: []
+args: []
+
+hostNetwork: false
+hostIPC: false
+dnsPolicy: ""
 
 service:
   type: ClusterIP
   port: 80
+  nodePorts:
+    http: ""
+  clusterIP: ""
+  annotations: {}
 
 ingress:
   enabled: false
+  pathType: ImplementationSpecific
+  apiVersion: ""
+  hostname: example.local
+  path: /
   annotations: {}
-  hosts:
-    - host: chart-example.local
-      paths:
-        - path: /
-          pathType: Prefix
+  tls: false
 
-configMap:
-  data:
-    KEY1: value1
-    KEY2: value2
+resources:
+  limits: {}
+  requests: {}
 
-persistence:
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+  successThreshold: 1
+
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+  successThreshold: 1
+
+metrics:
   enabled: false
-  size: 1Gi
-  storageClass: standard
+  port: 9113
+  serviceMonitor:
+    enabled: false
+    namespace: monitoring
+    interval: 30s
+
+podSecurityContext:
+  enabled: false
+
+containerSecurityContext:
+  enabled: false
+  runAsUser: 1001
+  runAsNonRoot: true

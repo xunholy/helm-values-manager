@@ -49,7 +49,11 @@ helm values-manager --upstream chart-values.yaml --downstream my-values.yaml
 You can directly reference a chart to extract default values:
 
 ```bash
-helm values-manager --chart nginx-ingress --chart-version 4.7.0 --downstream my-values.yaml
+# Using latest version
+helm values-manager --chart bitnami/nginx --downstream my-values.yaml
+
+# Specifying a particular version
+helm values-manager --chart bitnami/nginx --version 4.7.0 --downstream my-values.yaml
 ```
 
 ### Compare with a Helm release
@@ -193,7 +197,15 @@ This will:
 4. Verify that all expected output files are created
 5. Check that values are correctly identified as redundant or unsupported
 
-#### Manual Testing
+#### Manual Testing with Helm Charts
+
+For testing with Helm charts and repositories, see our [Examples and Testing Guide](examples/README.md) which includes:
+- Working with chart repositories
+- Using local and remote charts
+- Testing with different chart versions
+- Helper scripts for easy testing
+
+#### Manual Testing with Example Files
 
 You can test manually using the provided example files:
 

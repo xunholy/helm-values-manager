@@ -3,6 +3,7 @@ package helm
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -114,28 +115,71 @@ func FetchChartValues(chartName, version string) (map[string]interface{}, error)
 		return loadLocalChartValues(chartName)
 	}
 
-	// Otherwise, try to fetch from a repository
-	settings := cli.New()
-	actionConfig := new(action.Configuration)
-	err := actionConfig.Init(settings.RESTClientGetter(), settings.Namespace(), os.Getenv("HELM_DRIVER"), func(format string, v ...interface{}) {
-		log.Debug().Msgf(format, v...)
-	})
+	// We'll use the 'helm show values' command as a reliable way to get chart values
+	log.Info().Msgf("Using helm command to download chart values")
+
+	// Create a temporary file to store the values
+	tempDir, err := os.MkdirTemp("", "helm-values-manager-*")
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize Helm configuration: %w", err)
+		return nil, fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	tempFile := fmt.Sprintf("%s/chart-values.yaml", tempDir)
+
+	// Construct the helm command
+	var cmd string
+	if version == "" {
+		cmd = fmt.Sprintf("helm show values %s > %s", chartName, tempFile)
+		log.Info().Msgf("Using latest chart version")
+	} else {
+		cmd = fmt.Sprintf("helm show values %s --version %s > %s", chartName, version, tempFile)
+		log.Info().Msgf("Using chart version: %s", version)
 	}
 
-	client := action.NewPull()
-	client.RepoURL = "" // Use default repo
-	client.Version = version
-	client.DestDir = os.TempDir()
-	client.Untar = true
-
-	chartPath, err := client.Run(chartName)
+	// Execute the command
+	cmdExec := exec.Command("bash", "-c", cmd)
+	cmdOutput, err := cmdExec.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("failed to pull chart: %w", err)
+		log.Error().Err(err).Str("output", string(cmdOutput)).Msg("Failed to run helm show values command")
+		return nil, fmt.Errorf("failed to fetch chart values: %s (output: %s)", err, string(cmdOutput))
 	}
 
-	return loadLocalChartValues(chartPath)
+	// Check if the file exists and has content
+	if _, err := os.Stat(tempFile); err != nil || isFileEmpty(tempFile) {
+		log.Error().Msg("No values retrieved from helm command or chart not found")
+		return nil, fmt.Errorf("chart values not found or empty for: %s version: %s", chartName, version)
+	}
+
+	// Load the values from the temporary file
+	yamlContent, err := os.ReadFile(tempFile)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to read values from temporary file")
+		return nil, fmt.Errorf("failed to read chart values: %w", err)
+	}
+
+	var values map[string]interface{}
+	if err := yaml.Unmarshal(yamlContent, &values); err != nil {
+		log.Error().Err(err).Msg("Failed to parse values from temporary file")
+		return nil, fmt.Errorf("failed to parse chart values: %w", err)
+	}
+
+	if len(values) == 0 {
+		log.Error().Msg("Empty values map retrieved from chart")
+		return nil, fmt.Errorf("chart %s (version: %s) has empty values", chartName, version)
+	}
+
+	log.Info().Msg("Successfully retrieved chart values")
+	return values, nil
+}
+
+// Helper function to check if a file is empty
+func isFileEmpty(filePath string) bool {
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return true
+	}
+	return info.Size() == 0
 }
 
 // loadLocalChartValues loads values from a local chart directory or archive
