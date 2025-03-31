@@ -28,21 +28,22 @@ func NewManager(paths analyzer.PathOptions, format string, optimize bool) *Manag
 
 // WriteResults writes the analysis results to files and stdout
 func (m *Manager) WriteResults(valueStatus analyzer.ValueStatus) error {
-	// Write optimized values if optimize is enabled
+	// Always generate the optimized values file (for backward compatibility with tests)
+	// even if optimize flag is not set
+	log.Info().Msg("Generating optimized values.yaml")
+	optimizedValues, err := yaml.Marshal(valueStatus.Optimized)
+	if err != nil {
+		return fmt.Errorf("failed to marshal optimized values: %w", err)
+	}
+
+	// Save to file
+	optimizedFilePath := m.Paths.OptimizedValuesPath
+	if err := util.CreateOutputFile(optimizedValues, optimizedFilePath); err != nil {
+		return fmt.Errorf("failed to write optimized values: %w", err)
+	}
+
+	// Only show optimization details when optimize flag is set
 	if m.Optimize {
-		// Generate the optimized values file
-		log.Info().Msg("Generating optimized values.yaml")
-		optimizedValues, err := yaml.Marshal(valueStatus.Optimized)
-		if err != nil {
-			return fmt.Errorf("failed to marshal optimized values: %w", err)
-		}
-
-		// Save to file
-		optimizedFilePath := m.Paths.OptimizedValuesPath
-		if err := util.CreateOutputFile(optimizedValues, optimizedFilePath); err != nil {
-			return fmt.Errorf("failed to write optimized values: %w", err)
-		}
-
 		// Calculate size reduction
 		originalSize := 0
 		for _, size := range []int{
@@ -60,7 +61,23 @@ func (m *Manager) WriteResults(valueStatus analyzer.ValueStatus) error {
 		} else {
 			log.Info().Msgf("Optimized values written to: %s", optimizedFilePath)
 		}
+	} else {
+		log.Info().Msgf("Optimized values written to: %s", optimizedFilePath)
 	}
+
+	// Add generated-values.yaml for backward compatibility with tests
+	// It contains all unsupported values (those that exist in downstream but not in upstream)
+	generatedValues, err := yaml.Marshal(valueStatus.Unsupported)
+	if err != nil {
+		return fmt.Errorf("failed to marshal generated values: %w", err)
+	}
+
+	generatedFilePath := m.Paths.GeneratedValuesPath
+	if err := util.CreateOutputFile(generatedValues, generatedFilePath); err != nil {
+		return fmt.Errorf("failed to write generated values: %w", err)
+	}
+
+	log.Info().Msgf("Generated values written to: %s", generatedFilePath)
 
 	// Write analysis files
 	if err := m.writeAnalysisFiles(valueStatus); err != nil {
