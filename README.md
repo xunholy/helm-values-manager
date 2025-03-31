@@ -82,13 +82,35 @@ helm values-manager --upstream chart-values.yaml --downstream my-values.yaml --o
 
 ## Understanding Output
 
-Helm Values Manager generates three output files in the target directory (default: `values-analysis/`):
+Helm Values Manager generates these output files in the target directory (default: `values-analysis/`):
 
 - **optimized-values.yaml**: A cleaned version of your values file without redundant values (values that exactly match the upstream defaults)
 - **unsupported-values.yaml**: Values in your file that don't have a corresponding key in the upstream chart
 - **redundant-values.yaml**: Values in your file that match the upstream defaults (can be safely removed)
+- **commented-values.yaml**: Values in your file that exist in the upstream chart but are commented out (only generated if such values are found)
 
 These files help you understand how your custom values relate to the chart defaults and help you maintain cleaner configurations.
+
+### Special Feature: Commented Values Detection
+
+Many Helm charts (especially those with complex configurations like `cilium/cilium`) use commented-out fields to show available options. When you use these commented options in your values file, they might appear as "unsupported" in a regular analysis.
+
+Helm Values Manager intelligently detects these commented fields and puts them in a separate `commented-values.yaml` file instead of marking them as unsupported. This helps you understand:
+
+1. These values are actually supported by the chart
+2. They are just commented out in the default values file
+3. You can safely use them in your configuration
+
+Example (using the cilium chart):
+```bash
+# Chart has commented options like:
+# -- kubeProxyReplacement: false
+
+# Your values has:
+kubeProxyReplacement: true
+
+# This will be classified as "commented" not "unsupported"
+```
 
 ## Options
 

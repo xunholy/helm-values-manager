@@ -2,13 +2,15 @@ package analyzer
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
 // Analyzer is responsible for analyzing and comparing Helm values
 type Analyzer struct {
-	UpstreamValues   map[string]interface{}
-	DownstreamValues map[string]interface{}
+	UpstreamValues       map[string]interface{}
+	DownstreamValues     map[string]interface{}
+	OriginalUpstreamYAML []byte
 }
 
 // NewAnalyzer creates a new Analyzer with the given upstream and downstream values
@@ -19,11 +21,21 @@ func NewAnalyzer(upstream, downstream map[string]interface{}) *Analyzer {
 	}
 }
 
+// NewAnalyzerWithOriginalYAML creates a new Analyzer with the original YAML content
+func NewAnalyzerWithOriginalYAML(upstream, downstream map[string]interface{}, originalYAML []byte) *Analyzer {
+	return &Analyzer{
+		UpstreamValues:       upstream,
+		DownstreamValues:     downstream,
+		OriginalUpstreamYAML: originalYAML,
+	}
+}
+
 // Analyze compares upstream and downstream values to detect various types of value differences
 func (a *Analyzer) Analyze() ValueStatus {
 	valueStatus := ValueStatus{
 		Redundant:   make(map[string]interface{}),
 		Unsupported: make(map[string]interface{}),
+		Commented:   make(map[string]interface{}),
 		Optimized:   make(map[string]interface{}),
 	}
 
@@ -37,6 +49,13 @@ func (a *Analyzer) Analyze() ValueStatus {
 
 	// Special handling for service section which often has complex structures
 	a.handleServiceValues(&valueStatus)
+
+	// Remove unsupported values from optimized output
+	a.removeUnsupportedFromOptimized(&valueStatus)
+
+	// Remove commented values from optimized output
+	// These are technically supported (they exist in the chart) but are commented out
+	a.removeCommentedFromOptimized(&valueStatus)
 
 	return valueStatus
 }
@@ -93,8 +112,20 @@ func (a *Analyzer) detectValuesStatus(path string, upstream, downstream map[stri
 		// Check if the key exists in upstream
 		_, exists := upstream[key]
 		if !exists {
-			// Key in downstream doesn't exist in upstream, it's unsupported
-			setNestedValue(status.Unsupported, currentPath, downVal)
+			// Before marking as unsupported, check if it might be commented out in original YAML
+			isCommented := false
+			if a.OriginalUpstreamYAML != nil {
+				isCommented = DetectCommentedFields(a.OriginalUpstreamYAML, currentPath)
+			}
+
+			if isCommented {
+				// It's technically supported but commented out in the chart
+				// We'll add it to a new 'commented' category instead of unsupported
+				setNestedValue(status.Commented, currentPath, downVal)
+			} else {
+				// Key in downstream doesn't exist in upstream, it's unsupported
+				setNestedValue(status.Unsupported, currentPath, downVal)
+			}
 		}
 	}
 
@@ -102,8 +133,9 @@ func (a *Analyzer) detectValuesStatus(path string, upstream, downstream map[stri
 	for key, downVal := range downstream {
 		currentPath := joinPath(path, key)
 
-		// Skip if already identified as unsupported
-		if isPathInMap(status.Unsupported, currentPath) {
+		// Skip if already identified as unsupported or commented
+		if isPathInMap(status.Unsupported, currentPath) ||
+			(status.Commented != nil && isPathInMap(status.Commented, currentPath)) {
 			continue
 		}
 
@@ -326,5 +358,128 @@ func removeNestedValue(m map[string]interface{}, path string) {
 	// Clean up empty parent maps
 	if len(current) == 0 && parent != nil {
 		delete(parent, lastKey)
+	}
+}
+
+// detectCommentedFields checks if a field might exist in the original YAML but be commented out
+func DetectCommentedFields(yamlContent []byte, fieldPath string) bool {
+	// Convert dot notation path to typical YAML indentation pattern
+	parts := strings.Split(fieldPath, ".")
+	if len(parts) == 0 {
+		return false
+	}
+
+	lines := strings.Split(string(yamlContent), "\n")
+	fieldName := parts[len(parts)-1]
+
+	// Try to locate the field in commented lines
+	// We'll check for different comment patterns and indentation
+
+	// For common YAML comment patterns (at any indentation level)
+	for _, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+
+		// Standard comment patterns
+		if strings.HasPrefix(trimmedLine, "# "+fieldName+":") ||
+			strings.HasPrefix(trimmedLine, "#"+fieldName+":") ||
+			strings.HasPrefix(trimmedLine, "## "+fieldName+":") {
+			return true
+		}
+
+		// Handle values commented with leading spaces (common in Helm charts)
+		commentRegex := `^\s*#\s*` + fieldName + `\s*:\s*`
+		if matched, _ := regexp.MatchString(commentRegex, line); matched {
+			return true
+		}
+
+		// Special case for Cilium chart (they often use "# -- fieldName: value" format)
+		if strings.Contains(line, "# -- "+fieldName+":") {
+			return true
+		}
+	}
+
+	// For nested fields, check if they appear anywhere in comments
+	// This is less precise but catches more cases
+	if len(parts) > 1 {
+		// Create different patterns to search for in the YAML content
+		searchPatterns := []string{}
+
+		// Add patterns for different comment prefixes and indentation styles
+		for _, prefix := range []string{"#", "# ", "## ", "# -- "} {
+			searchPatterns = append(searchPatterns, prefix+fieldName+":")
+
+			// For Cilium's common comment style (adding explanation after the field)
+			searchPatterns = append(searchPatterns, prefix+fieldName+": ")
+		}
+
+		// Search for these patterns in the content
+		content := string(yamlContent)
+		for _, pattern := range searchPatterns {
+			if strings.Contains(content, pattern) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// removeUnsupportedFromOptimized removes unsupported values from the optimized output
+func (a *Analyzer) removeUnsupportedFromOptimized(status *ValueStatus) {
+	// Process each key in unsupported values
+	for key, value := range status.Unsupported {
+		if nestedMap, isMap := value.(map[string]interface{}); isMap {
+			// For nested maps, we need to handle each nested key
+			// Check if the key exists in optimized values
+			if optimizedMap, exists := status.Optimized[key].(map[string]interface{}); exists {
+				// For each nested key in unsupported, remove from optimized
+				for nestedKey := range nestedMap {
+					delete(optimizedMap, nestedKey)
+				}
+
+				// If the map is now empty, remove it
+				if len(optimizedMap) == 0 {
+					delete(status.Optimized, key)
+				} else {
+					status.Optimized[key] = optimizedMap
+				}
+			}
+		} else {
+			// For non-nested values, simply remove from optimized
+			delete(status.Optimized, key)
+		}
+	}
+}
+
+// removeCommentedFromOptimized removes commented values from the optimized output
+// Since commented values are technically supported (just commented out in the chart),
+// we might want to keep them in the optimized output for explicit documentation.
+// This is a policy decision - for now we'll remove them to be consistent.
+func (a *Analyzer) removeCommentedFromOptimized(status *ValueStatus) {
+	if status.Commented == nil || len(status.Commented) == 0 {
+		return
+	}
+
+	// Process each key in commented values
+	for key, value := range status.Commented {
+		if nestedMap, isMap := value.(map[string]interface{}); isMap {
+			// For nested maps, handle each nested key
+			if optimizedMap, exists := status.Optimized[key].(map[string]interface{}); exists {
+				// For each nested key in commented, remove from optimized
+				for nestedKey := range nestedMap {
+					delete(optimizedMap, nestedKey)
+				}
+
+				// If the map is now empty, remove it
+				if len(optimizedMap) == 0 {
+					delete(status.Optimized, key)
+				} else {
+					status.Optimized[key] = optimizedMap
+				}
+			}
+		} else {
+			// For non-nested values, simply remove from optimized
+			delete(status.Optimized, key)
+		}
 	}
 }

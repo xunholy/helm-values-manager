@@ -8,6 +8,7 @@ import (
 type ValueStatus struct {
 	Redundant   map[string]interface{} `yaml:"redundant,omitempty"`
 	Unsupported map[string]interface{} `yaml:"unsupported,omitempty"`
+	Commented   map[string]interface{} `yaml:"commented,omitempty"`
 	Optimized   map[string]interface{} `yaml:"optimized,omitempty"`
 }
 
@@ -25,6 +26,7 @@ type Changes struct {
 // PathOptions contains paths for output files
 type PathOptions struct {
 	OutputDir             string
+	GeneratedValuesPath   string
 	OptimizedValuesPath   string
 	UnsupportedValuesPath string
 	RedundantValuesPath   string
@@ -34,6 +36,7 @@ type PathOptions struct {
 func NewPathOptions(outputDir string) PathOptions {
 	return PathOptions{
 		OutputDir:             outputDir,
+		GeneratedValuesPath:   outputDir + "/generated-values.yaml",
 		OptimizedValuesPath:   outputDir + "/optimized-values.yaml",
 		UnsupportedValuesPath: outputDir + "/unsupported-values.yaml",
 		RedundantValuesPath:   outputDir + "/redundant-values.yaml",

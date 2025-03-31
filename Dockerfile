@@ -9,7 +9,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-w -s" -o 
 
 FROM alpine:3.18
 
-RUN apk add --no-cache ca-certificates curl bash git && \
+RUN apk add --no-cache ca-certificates curl bash git openssl && \
   adduser -D -u 1000 appuser && \
   mkdir -p /app/values-analysis && \
   chown -R appuser:appuser /app

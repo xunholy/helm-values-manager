@@ -31,3 +31,6 @@ go.work
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+
+# Ignore local helm charts
+chart-values/
